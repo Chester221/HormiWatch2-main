@@ -1,0 +1,375 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase/client'
+
+// Tipo para contacto de cliente (según estructura real)
+export interface ClientContact {
+    id: string
+    client_id: string
+    name: string
+    email: string | null
+    phone: string | null
+    position: string | null
+    created_at?: string
+}
+
+// Tipo para cliente (según estructura real)
+export interface Client {
+    id: string
+    name: string
+    ruc: string | null
+    address: string | null
+    is_active: boolean
+    created_at?: string
+    updated_at?: string
+}
+
+// Tipo para cliente con contactos anidados
+export interface ClientWithContacts extends Client {
+    contacts: ClientContact[]
+}
+
+// Hook para obtener todos los clientes con sus contactos
+export const useClientsWithContacts = (searchQuery?: string) => {
+    const fetchClientsWithContacts = async (): Promise<ClientWithContacts[]> => {
+        try {
+            // Primero obtener clientes activos
+            let clientsQuery = supabase
+                .from('clients')
+                .select('*')
+                .eq('is_active', true)
+                .order('name', { ascending: true })
+
+            const { data: clientsData, error: clientsError } = await clientsQuery
+
+            if (clientsError) {
+                if (clientsError.code === '42P01' || clientsError.message.includes('does not exist')) {
+                    console.warn('La tabla clients no existe en Supabase.')
+                    return []
+                }
+                console.error('Error fetching clients:', clientsError)
+                throw new Error(clientsError.message)
+            }
+
+            // Luego obtener contactos
+            const { data: contactsData, error: contactsError } = await supabase
+                .from('client_contacts')
+                .select('*')
+                .order('name', { ascending: true })
+
+            if (contactsError && !contactsError.message.includes('does not exist')) {
+                console.warn('Error fetching contacts:', contactsError.message)
+            }
+
+            const contacts = (contactsData || []) as ClientContact[]
+
+            // Mapear contactos a clientes
+            let clients: ClientWithContacts[] = (clientsData || []).map((client: Client) => ({
+                ...client,
+                contacts: contacts.filter(c => c.client_id === client.id)
+            }))
+
+            // Filtrar localmente si hay búsqueda
+            if (searchQuery) {
+                const search = searchQuery.toLowerCase()
+                clients = clients.filter(c =>
+                    c.name.toLowerCase().includes(search) ||
+                    (c.address && c.address.toLowerCase().includes(search)) ||
+                    (c.ruc && c.ruc.toLowerCase().includes(search))
+                )
+            }
+
+            return clients
+        } catch (err) {
+            console.error('Error en useClientsWithContacts:', err)
+            return []
+        }
+    }
+
+    return useQuery({
+        queryKey: ['clients_with_contacts', searchQuery],
+        queryFn: fetchClientsWithContacts,
+        retry: false,
+    })
+}
+
+// Hook para obtener todos los clientes (sin contactos)
+export const useClients = (searchQuery?: string) => {
+    const fetchClients = async (): Promise<Client[]> => {
+        try {
+            const { data, error } = await supabase
+                .from('clients')
+                .select('*')
+                .eq('is_active', true)
+                .order('name', { ascending: true })
+
+            if (error) {
+                if (error.code === '42P01' || error.message.includes('does not exist')) {
+                    console.warn('La tabla clients no existe en Supabase.')
+                    return []
+                }
+                throw new Error(error.message)
+            }
+
+            let clients = (data || []) as Client[]
+            if (searchQuery) {
+                const search = searchQuery.toLowerCase()
+                clients = clients.filter(c =>
+                    c.name.toLowerCase().includes(search) ||
+                    (c.ruc && c.ruc.toLowerCase().includes(search))
+                )
+            }
+
+            return clients
+        } catch (err) {
+            console.error('Error en useClients:', err)
+            return []
+        }
+    }
+
+    return useQuery({
+        queryKey: ['clients', searchQuery],
+        queryFn: fetchClients,
+        retry: false,
+    })
+}
+
+// Hook para obtener contactos de un cliente
+export const useClientContacts = (clientId: string | undefined) => {
+    const fetchContacts = async (): Promise<ClientContact[]> => {
+        if (!clientId) return []
+
+        try {
+            const { data, error } = await supabase
+                .from('client_contacts')
+                .select('*')
+                .eq('client_id', clientId)
+                .order('name', { ascending: true })
+
+            if (error) {
+                if (error.code === '42P01' || error.message.includes('does not exist')) {
+                    console.warn('La tabla client_contacts no existe en Supabase.')
+                    return []
+                }
+                console.error('Error fetching contacts:', error)
+                return []
+            }
+
+            return (data || []) as ClientContact[]
+        } catch (err) {
+            console.error('Error en useClientContacts:', err)
+            return []
+        }
+    }
+
+    return useQuery({
+        queryKey: ['client_contacts', clientId],
+        queryFn: fetchContacts,
+        enabled: !!clientId,
+        retry: false,
+    })
+}
+
+// Datos para crear cliente
+interface CreateClientData {
+    name: string
+    ruc?: string
+    address?: string
+    is_active?: boolean
+}
+
+// Datos para crear contacto
+interface CreateContactData {
+    client_id: string
+    name: string
+    email?: string
+    phone?: string
+    position?: string
+}
+
+// Hook para crear cliente
+export const useCreateClient = () => {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (data: CreateClientData) => {
+            const { data: newClient, error } = await supabase
+                .from('clients')
+                .insert({ ...data, is_active: true })
+                .select()
+                .single()
+
+            if (error) throw new Error(error.message)
+            return newClient as Client
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['clients'] })
+            queryClient.invalidateQueries({ queryKey: ['clients_with_contacts'] })
+        },
+    })
+}
+
+// Hook para actualizar cliente
+export const useUpdateClient = () => {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ id, data }: { id: string; data: Partial<CreateClientData> }) => {
+            const { data: updated, error } = await supabase
+                .from('clients')
+                .update({ ...data, updated_at: new Date().toISOString() })
+                .eq('id', id)
+                .select()
+                .single()
+
+            if (error) throw new Error(error.message)
+            return updated as Client
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['clients'] })
+            queryClient.invalidateQueries({ queryKey: ['clients_with_contacts'] })
+        },
+    })
+}
+
+// Hook para eliminar cliente (soft delete)
+export const useDeleteClient = () => {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (id: string) => {
+            // Soft delete - solo marcar como inactivo
+            const { error } = await supabase
+                .from('clients')
+                .update({ is_active: false, updated_at: new Date().toISOString() })
+                .eq('id', id)
+
+            if (error) throw new Error(error.message)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['clients'] })
+            queryClient.invalidateQueries({ queryKey: ['clients_with_contacts'] })
+        },
+    })
+}
+
+// Hook para crear contacto
+export const useCreateContact = () => {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (data: CreateContactData) => {
+            const { data: newContact, error } = await supabase
+                .from('client_contacts')
+                .insert(data)
+                .select()
+                .single()
+
+            if (error) throw new Error(error.message)
+            return newContact as ClientContact
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['client_contacts', variables.client_id] })
+            queryClient.invalidateQueries({ queryKey: ['clients_with_contacts'] })
+        },
+    })
+}
+
+// Hook para eliminar contacto
+export const useDeleteContact = () => {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (id: string) => {
+            const { error } = await supabase
+                .from('client_contacts')
+                .delete()
+                .eq('id', id)
+
+            if (error) throw new Error(error.message)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['client_contacts'] })
+            queryClient.invalidateQueries({ queryKey: ['clients_with_contacts'] })
+        },
+    })
+}
+
+// Hook combinado para guardar cliente con contactos
+export const useSaveClientWithContacts = () => {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({
+            client,
+            contacts,
+            isEditing
+        }: {
+            client: CreateClientData & { id?: string }
+            contacts: Omit<CreateContactData, 'client_id'>[]
+            isEditing: boolean
+        }) => {
+            let clientId: string
+
+            if (isEditing && client.id) {
+                // Actualizar cliente existente
+                const { error: updateError } = await supabase
+                    .from('clients')
+                    .update({
+                        name: client.name,
+                        ruc: client.ruc,
+                        address: client.address,
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', client.id)
+
+                if (updateError) throw new Error(updateError.message)
+                clientId = client.id
+
+                // Eliminar contactos existentes
+                await supabase
+                    .from('client_contacts')
+                    .delete()
+                    .eq('client_id', clientId)
+            } else {
+                // Crear nuevo cliente
+                const { data: newClient, error: createError } = await supabase
+                    .from('clients')
+                    .insert({
+                        name: client.name,
+                        ruc: client.ruc,
+                        address: client.address,
+                        is_active: true,
+                    })
+                    .select()
+                    .single()
+
+                if (createError) throw new Error(createError.message)
+                clientId = newClient.id
+            }
+
+            // Crear contactos
+            if (contacts.length > 0) {
+                const contactsToInsert = contacts.map(c => ({
+                    client_id: clientId,
+                    name: c.name,
+                    email: c.email,
+                    phone: c.phone,
+                    position: c.position,
+                }))
+
+                const { error: contactsError } = await supabase
+                    .from('client_contacts')
+                    .insert(contactsToInsert)
+
+                if (contactsError) throw new Error(contactsError.message)
+            }
+
+            return { clientId }
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['clients'] })
+            queryClient.invalidateQueries({ queryKey: ['clients_with_contacts'] })
+            queryClient.invalidateQueries({ queryKey: ['client_contacts'] })
+        },
+    })
+}
