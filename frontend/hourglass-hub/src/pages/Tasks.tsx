@@ -121,25 +121,28 @@ const Tasks = () => {
   };
 
   // 3. Eliminar Tarea
-  const handleDeleteTask = (taskId: number) => {
-    setTaskToDelete(taskId);
-    setDeleteDialogOpen(true);
-  };
+const handleDeleteTask = (taskId: number) => {
+  console.log("Eliminando tarea:", taskId);  // Debug
+  setTaskToDelete(taskId);
+  setDeleteDialogOpen(true);
+};
 
-  const confirmDeleteTask = async () => {
-    if (!taskToDelete) return;
-    deleteTaskMutation.mutate(taskToDelete, {
-      onSuccess: () => {
-        toast.success("Tarea eliminada correctamente");
-        setDeleteDialogOpen(false);
-        setTaskToDelete(null);
-        refetchTasks();
-      },
-      onError: (error) => {
-        toast.error(`No se pudo eliminar la tarea: ${error.message}`);
-      },
-    });
-  };
+const confirmDeleteTask = async () => {
+  if (!taskToDelete) return;
+  console.log("Confirmando eliminación:", taskToDelete);  // Debug
+  deleteTaskMutation.mutate(taskToDelete, {
+    onSuccess: () => {
+      toast.success("Tarea eliminada correctamente");
+      setDeleteDialogOpen(false);
+      setTaskToDelete(null);
+      refetchTasks();  // Forzar recarga
+    },
+    onError: (error) => {
+      console.error("Error al eliminar:", error);
+      toast.error(`No se pudo eliminar la tarea: ${error.message}`);
+    },
+  });
+};
 
   // 4. Editar Tarea
   const handleEditTask = (task: Task) => {
@@ -331,15 +334,16 @@ const Tasks = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Modal para Editar Tarea */}
-      <TaskEditModal
-        task={taskToEdit}
-        open={editModalOpen}
-        onOpenChange={setEditModalOpen}
-        onSuccess={() => {
-          refetchTasks();
-        }}
-      />
+{/* Modal para Editar Tarea */}
+<TaskEditModal
+  task={taskToEdit}
+  open={editModalOpen}
+  onOpenChange={setEditModalOpen}
+  onSuccess={() => {
+    refetchTasks();  // Forzar recarga de datos
+    toast.success("Tarea actualizada correctamente");
+  }}
+/>
 
       {/* Modal para Registrar Tiempo */}
       <LogTimeModal
