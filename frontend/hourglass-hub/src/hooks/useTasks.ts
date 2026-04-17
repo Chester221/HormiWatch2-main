@@ -88,19 +88,28 @@ export const useCreateTask = () => {
 
 // Hook para actualizar tarea
 // Hook para actualizar tarea
+// Hook para actualizar tarea
 export const useUpdateTask = () => {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: async ({ id, data }: { id: number | string; data: Partial<CreateTaskData> }) => {
-      const { data: updated, error } = await supabase
+      // Primero actualizar
+      const { error: updateError } = await supabase
         .from('tasks')
         .update(data)
         .eq('id', id)
-        .select()
+
+      if (updateError) throw new Error(updateError.message)
+
+      // Luego obtener el registro actualizado
+      const { data: updated, error: fetchError } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', id)
         .single()
 
-      if (error) throw new Error(error.message)
+      if (fetchError) throw new Error(fetchError.message)
       return updated
     },
     onSuccess: () => {
