@@ -48,30 +48,23 @@ export function TaskEditModal({ task, open, onOpenChange, onSuccess }: TaskEditM
     e.preventDefault();
     if (!task) return;
     
-    console.log('Enviando actualización:', { id: task.id, data: { 
+    const updatedData = { 
       title, 
       description, 
       status, 
       priority,
       hours: hours ? parseFloat(hours) : null
-    }});
+    };
     
     try {
       await updateTask.mutateAsync({
         id: task.id,
-        data: { 
-          title, 
-          description, 
-          status, 
-          priority,
-          hours: hours ? parseFloat(hours) : null
-        }
+        data: updatedData
       });
-      console.log('Actualización exitosa');
       onOpenChange(false);
-      onSuccess();
+      onSuccess(); // Recargar datos después de actualizar
     } catch (error) {
-      console.error('Error al actualizar tarea:', error);
+      console.error('Error al actualizar:', error);
     }
   };
 
