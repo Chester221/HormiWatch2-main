@@ -87,15 +87,15 @@ export const useCreateTask = () => {
 }
 
 // Hook para actualizar tarea
+// Hook para actualizar tarea
 export const useUpdateTask = () => {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<CreateTaskData> }) => {
-      // @ts-ignore
+    mutationFn: async ({ id, data }: { id: number | string; data: Partial<CreateTaskData> }) => {
       const { data: updated, error } = await supabase
         .from('tasks')
-        .update(data as any)
+        .update(data)
         .eq('id', id)
         .select()
         .single()

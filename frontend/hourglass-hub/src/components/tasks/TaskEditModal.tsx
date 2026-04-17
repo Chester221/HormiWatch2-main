@@ -36,7 +36,7 @@ export function TaskEditModal({ task, open, onOpenChange, onSuccess }: TaskEditM
 
   useEffect(() => {
     if (task) {
-      setTitle(task.title || '');
+      setTitle(task.title || task.description || '');
       setDescription(task.description || '');
       setStatus(task.status || 'pending');
       setPriority(task.priority || 'medium');
@@ -47,6 +47,14 @@ export function TaskEditModal({ task, open, onOpenChange, onSuccess }: TaskEditM
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!task) return;
+    
+    console.log('Enviando actualización:', { id: task.id, data: { 
+      title, 
+      description, 
+      status, 
+      priority,
+      hours: hours ? parseFloat(hours) : null
+    }});
     
     try {
       await updateTask.mutateAsync({
@@ -59,6 +67,7 @@ export function TaskEditModal({ task, open, onOpenChange, onSuccess }: TaskEditM
           hours: hours ? parseFloat(hours) : null
         }
       });
+      console.log('Actualización exitosa');
       onOpenChange(false);
       onSuccess();
     } catch (error) {
