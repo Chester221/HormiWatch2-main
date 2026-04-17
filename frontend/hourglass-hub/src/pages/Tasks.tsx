@@ -25,10 +25,11 @@ import { Plus, Search, Filter, Calendar as CalendarIcon, List as ListIcon, Loade
 import { LogTimeModal } from "@/components/tasks/LogTimeModal";
 import { TaskCalendar, type Task } from "@/components/tasks/TaskCalendar";
 import { TaskList } from "@/components/tasks/TaskList";
+import { TaskEditModal } from "@/components/task/TaskEditModal";
 import { toast } from "sonner";
 import { useProjects } from "@/hooks/useProjects";
 import { useServices } from "@/hooks/useServices";
-import { useTasks, useCreateTask, useDeleteTask, type CreateTaskData as NewTask } from "@/hooks/useTasks";
+import { useTasks, useCreateTask, useDeleteTask, useUpdateTask, type CreateTaskData as NewTask } from "@/hooks/useTasks";
 import { useAuth } from "@/hooks/useAuth";
 import { useHolidays } from "@/hooks/useHolidays";
 
@@ -36,7 +37,7 @@ const Tasks = () => {
   // Filtros y UI
   const [searchQuery, setSearchQuery] = useState("");
   const [logTimeModalOpen, setLogTimeModalOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"calendar" | "list">("list"); // Por defecto lista es más fácil de leer
+  const [viewMode, setViewMode] = useState<"calendar" | "list">("list");
   const [calendarView, setCalendarView] = useState<"week" | "month">("week");
   const [projectFilter, setProjectFilter] = useState("all");
 
@@ -44,15 +45,20 @@ const Tasks = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<number | null>(null);
 
+  // Estado para editar
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [taskToEdit, setTaskToEdit] = useState<any>(null);
+
   // --- Data Fetching con Hooks de Supabase ---
-  const { user } = useAuth(); // Obtiene el usuario logueado
+  const { user } = useAuth();
   const { data: projectsList, isLoading: isLoadingProjects } = useProjects();
   const { data: servicesList } = useServices();
-  const { holidays } = useHolidays(); // Obtener feriados para cálculo de tarifa
-  const { data: tasksData, isLoading: isLoadingTasks } = useTasks(projectFilter);
+  const { holidays } = useHolidays();
+  const { data: tasksData, isLoading: isLoadingTasks, refetch: refetchTasks } = useTasks(projectFilter);
 
   // --- Mutaciones para CUD (Create, Update, Delete) ---
   const createTaskMutation = useCreateTask();
+  const updateTaskMutation = useUpdateTask();
   const deleteTaskMutation = useDeleteTask();
 
   // Helper: Calcular horas entre dos timestamps ISO
@@ -62,23 +68,19 @@ const Tasks = () => {
     const endDate = new Date(end);
     const diffMs = endDate.getTime() - startDate.getTime();
     const diffHours = diffMs / (1000 * 60 * 60);
-    return Math.round(diffHours * 10) / 10; // Redondear a un decimal
+    return Math.round(diffHours * 10) / 10;
   };
 
   // 2. Crear Tarea
   const handleCreateTask = async (data: any) => {
     if (!user) return toast.error("Debes iniciar sesión para crear una tarea.");
 
-    // Combina fecha y hora para crear timestamps ISO completos
-    // data.date es objeto Date, formateamos a YYYY-MM-DD
     const dateStr = format(data.date, "yyyy-MM-dd");
     const start_time = new Date(`${dateStr}T${data.startTime}:00`).toISOString();
     const end_time = new Date(`${dateStr}T${data.endTime}:00`).toISOString();
 
-    // Get connection references
     const selectedService = servicesList?.find(s => s.id === data.serviceId);
 
-    // Verificar si es feriado para aplicar tarifa x2
     const isHoliday = holidays.data?.some(h => h.date === dateStr && !h.is_working_day);
     let hourlyRate = selectedService?.default_hourly_rate || 0;
 
@@ -106,6 +108,7 @@ const Tasks = () => {
           toast.info("Se aplicó tarifa festiva (x2) automáticamente.", { duration: 4000 });
         }
         setLogTimeModalOpen(false);
+        refetchTasks();
       },
       onError: (error: any) => {
         console.error("Error detallado al crear tarea:", error);
@@ -130,6 +133,7 @@ const Tasks = () => {
         toast.success("Tarea eliminada correctamente");
         setDeleteDialogOpen(false);
         setTaskToDelete(null);
+        refetchTasks();
       },
       onError: (error) => {
         toast.error(`No se pudo eliminar la tarea: ${error.message}`);
@@ -137,22 +141,46 @@ const Tasks = () => {
     });
   };
 
-  // 4. Actualizar Tarea (Cambiar estado)
-  const handleToggleStatus = async (task: Task) => {
-    // Esta función ahora está vacía porque la lógica de actualización
-    // se puede manejar directamente en el componente TaskList o en un modal de edición.
-    // Por simplicidad, la dejamos como placeholder.
-    toast.info("La edición de estado se implementará en el modal de edición.");
-  }
+  // 4. Editar Tarea
+  const handleEditTask = (task: Task) => {
+    // Buscar la tarea completa en los datos originales
+    const originalTask = tasksData?.find(t => String(t.id) === task.id);
+    if (originalTask) {
+      setTaskToEdit(originalTask);
+      setEditModalOpen(true);
+    } else {
+      toast.error("No se pudo encontrar la tarea para editar");
+    }
+  };
+
+  // 5. Actualizar Tarea después de editar
+  const handleUpdateTask = async (updatedData: any) => {
+    if (!taskToEdit) return;
+    
+    updateTaskMutation.mutate({
+      id: taskToEdit.id,
+      data: updatedData
+    }, {
+      onSuccess: () => {
+        toast.success("Tarea actualizada correctamente");
+        setEditModalOpen(false);
+        setTaskToEdit(null);
+        refetchTasks();
+      },
+      onError: (error: any) => {
+        console.error("Error al actualizar tarea:", error);
+        toast.error(`Error al actualizar: ${error.message}`);
+      }
+    });
+  };
 
   // Lógica de Filtrado
-  // Mapea los datos de Supabase al formato que esperan los componentes de UI
   const tasks: Task[] = (tasksData || []).map(t => ({
     id: String(t.id),
-    title: t.description || "Tarea sin descripción",
-    date: t.start_time.split('T')[0],
-    startTime: t.start_time.split('T')[1].substring(0, 5),
-    endTime: t.end_time.split('T')[1].substring(0, 5),
+    title: t.description || t.title || "Tarea sin descripción",
+    date: t.start_time?.split('T')[0] || new Date().toISOString().split('T')[0],
+    startTime: t.start_time?.split('T')[1]?.substring(0, 5) || "00:00",
+    endTime: t.end_time?.split('T')[1]?.substring(0, 5) || "00:00",
     project: t.projects?.name || "General",
     serviceType: t.services?.name || "General",
     completed: t.status === 'Completed',
@@ -164,8 +192,6 @@ const Tasks = () => {
       task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       task.serviceType.toLowerCase().includes(searchQuery.toLowerCase()) ||
       task.project?.toLowerCase().includes(searchQuery.toLowerCase());
-
-    // El filtro por proyecto ya se hace a nivel de base de datos en el hook `useTasks`
     return matchesSearch;
   });
 
@@ -207,7 +233,6 @@ const Tasks = () => {
       {/* Filtros y Selector de Vista */}
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between opacity-0 animate-fade-in" style={{ animationDelay: "150ms" }}>
         <div className="flex flex-col sm:flex-row gap-4 flex-1">
-          {/* Buscador */}
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -218,7 +243,6 @@ const Tasks = () => {
             />
           </div>
 
-          {/* Filtro de Proyecto */}
           <Select value={projectFilter} onValueChange={setProjectFilter}>
             <SelectTrigger className="w-full sm:w-[200px] bg-muted/50 border-transparent">
               <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
@@ -235,7 +259,6 @@ const Tasks = () => {
           </Select>
         </div>
 
-        {/* Toggle de Vista */}
         <div className="flex items-center gap-2">
           <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "calendar" | "list")}>
             <TabsList className="bg-muted/50">
@@ -273,13 +296,13 @@ const Tasks = () => {
               <TaskCalendar
                 tasks={filteredTasks}
                 view={calendarView}
-                onTaskClick={(task) => console.log("Click en tarea:", task)}
+                onTaskClick={(task) => handleEditTask(task)}
               />
             ) : (
               <TaskList
                 tasks={filteredTasks}
-                onTaskClick={handleToggleStatus} // Usamos click para togglear status rápido
-                onEditTask={(task) => toast.info("Edición no implementada en esta demo")}
+                onTaskClick={(task) => handleEditTask(task)}
+                onEditTask={(task) => handleEditTask(task)}
                 onDeleteTask={(taskId) => handleDeleteTask(Number(taskId))}
               />
             )}
@@ -308,11 +331,20 @@ const Tasks = () => {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Modal para Editar Tarea */}
+      <TaskEditModal
+        task={taskToEdit}
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        onSuccess={() => {
+          refetchTasks();
+        }}
+      />
+
       {/* Modal para Registrar Tiempo */}
       <LogTimeModal
         open={logTimeModalOpen}
         onOpenChange={setLogTimeModalOpen}
-        // Pasamos la lista de proyectos real al modal
         projects={projectsList || []}
         onSubmit={handleCreateTask}
       />
