@@ -25,7 +25,7 @@ import { Plus, Search, Filter, Calendar as CalendarIcon, List as ListIcon, Loade
 import { LogTimeModal } from "@/components/tasks/LogTimeModal";
 import { TaskCalendar, type Task } from "@/components/tasks/TaskCalendar";
 import { TaskList } from "@/components/tasks/TaskList";
-import { TaskEditModal } from "@/components/task/TaskEditModal";
+import { TaskEditModal } from "@/components/tasks/TaskEditModal";
 import { toast } from "sonner";
 import { useProjects } from "@/hooks/useProjects";
 import { useServices } from "@/hooks/useServices";
