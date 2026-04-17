@@ -14,17 +14,14 @@ export type Task = Tables<'tasks'> & {
 export type CreateTaskData = InsertTables<'tasks'>
 
 // Hook para obtener tareas
+// Hook para obtener tareas
 export const useTasks = (projectId?: string | 'all') => {
   const fetchTasks = async (): Promise<Task[]> => {
     try {
+      // Usar la vista tasks_with_details en lugar de la tabla tasks
       let query = supabase
-        .from('tasks')
-        .select(`
-          *,
-          projects ( name ),
-          services ( name ),
-          technician:profiles ( full_name, avatar_url )
-        `)
+        .from('tasks_with_details')
+        .select('*')
         .order('start_time', { ascending: false })
 
       if (projectId && projectId !== 'all') {
@@ -35,13 +32,21 @@ export const useTasks = (projectId?: string | 'all') => {
 
       if (error) {
         if (error.code === '42P01' || error.message.includes('does not exist')) {
-          console.warn('La tabla tasks o relación no existe.')
+          console.warn('La vista tasks_with_details no existe.')
           return []
         }
         throw new Error(error.message)
       }
 
-      return (data || []) as Task[]
+      // Transformar los datos al formato que espera el frontend
+      const transformedData = (data || []).map((item: any) => ({
+        ...item,
+        projects: item.project_name ? { name: item.project_name } : null,
+        services: item.service_name ? { name: item.service_name } : null,
+        technician: item.technician_name ? { full_name: item.technician_name, avatar_url: null } : null
+      }))
+
+      return transformedData as Task[]
     } catch (err) {
       console.error('Error fetching tasks:', err)
       return []
@@ -60,10 +65,15 @@ export const useCreateTask = () => {
 
   return useMutation({
     mutationFn: async (newTask: CreateTaskData) => {
-      // @ts-ignore
+      // Asegurar que title no sea null
+      const taskToInsert = {
+        ...newTask,
+        title: newTask.title || newTask.name || 'Tarea sin título'
+      }
+      
       const { data, error } = await supabase
         .from('tasks')
-        .insert(newTask as any)
+        .insert(taskToInsert)
         .select()
         .single()
 
