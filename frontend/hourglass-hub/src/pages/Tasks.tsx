@@ -43,7 +43,7 @@ const Tasks = () => {
 
   // Estado para eliminar
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [taskToDelete, setTaskToDelete] = useState<number | null>(null);
+const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
 
   // Estado para editar
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -121,8 +121,8 @@ const Tasks = () => {
   };
 
   // 2. Eliminar Tarea
-  const handleDeleteTask = (taskId: number) => {
-    console.log("Eliminando tarea:", taskId);
+const handleDeleteTask = (taskId: string) => {
+      console.log("Eliminando tarea:", taskId);
     setTaskToDelete(taskId);
     setDeleteDialogOpen(true);
   };

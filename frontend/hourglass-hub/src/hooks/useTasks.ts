@@ -123,7 +123,7 @@ export const useDeleteTask = () => {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (taskId: number | string) => {
+    mutationFn: async (taskId: string) => {
       const { error } = await supabase
         .from('tasks')
         .delete()
