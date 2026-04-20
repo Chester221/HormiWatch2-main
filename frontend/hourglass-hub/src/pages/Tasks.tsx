@@ -128,21 +128,22 @@ const Tasks = () => {
   };
 
   const confirmDeleteTask = async () => {
-    if (!taskToDelete) return;
-    console.log("Confirmando eliminación:", taskToDelete);
-    deleteTaskMutation.mutate(taskToDelete, {
-      onSuccess: () => {
-        toast.success("Tarea eliminada correctamente");
-        setDeleteDialogOpen(false);
-        setTaskToDelete(null);
+  if (!taskToDelete) return;
+  deleteTaskMutation.mutate(taskToDelete, {
+    onSuccess: async () => {
+      toast.success("Tarea eliminada correctamente");
+      setDeleteDialogOpen(false);
+      setTaskToDelete(null);
+      await refetchTasks();
+      setTimeout(() => {
         refetchTasks();
-      },
-      onError: (error) => {
-        console.error("Error al eliminar:", error);
-        toast.error(`No se pudo eliminar la tarea: ${error.message}`);
-      },
-    });
-  };
+      }, 500);
+    },
+    onError: (error) => {
+      toast.error(`Error: ${error.message}`);
+    },
+  });
+};
 
   // 3. Editar Tarea
   const handleEditTask = (task: Task) => {
@@ -335,14 +336,17 @@ const Tasks = () => {
 
       {/* Modal para Editar Tarea */}
       <TaskEditModal
-        task={taskToEdit}
-        open={editModalOpen}
-        onOpenChange={setEditModalOpen}
-        onSuccess={() => {
-          refetchTasks();
-          toast.success("Tarea actualizada correctamente");
-        }}
-      />
+  task={taskToEdit}
+  open={editModalOpen}
+  onOpenChange={setEditModalOpen}
+  onSuccess={async () => {
+    await refetchTasks();
+    setTimeout(() => {
+      refetchTasks();
+    }, 500);
+    toast.success("Tarea actualizada correctamente");
+  }}
+/>
 
       {/* Modal para Registrar Tiempo */}
       <LogTimeModal
