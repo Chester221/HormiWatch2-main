@@ -122,10 +122,10 @@ const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
 
   // 2. Eliminar Tarea
 const handleDeleteTask = (taskId: string) => {
-      console.log("Eliminando tarea:", taskId);
-    setTaskToDelete(taskId);
-    setDeleteDialogOpen(true);
-  };
+  console.log("Eliminando tarea:", taskId);
+  setTaskToDelete(taskId);
+  setDeleteDialogOpen(true);
+};
 
   const confirmDeleteTask = async () => {
   if (!taskToDelete) return;

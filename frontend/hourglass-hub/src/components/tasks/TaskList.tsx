@@ -120,7 +120,7 @@ export function TaskList({ tasks, onTaskClick, onEditTask, onDeleteTask }: TaskL
                 className="cursor-pointer gap-2 text-destructive focus:text-destructive"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDeleteTask?.(task.id);
+                  onDeleteTask?.(String(task.id))
                 }}
               >
                 <Trash2 className="h-3.5 w-3.5" />
