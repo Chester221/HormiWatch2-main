@@ -62,7 +62,7 @@ export function TaskEditModal({ task, open, onOpenChange, onSuccess }: TaskEditM
         data: updatedData
       });
       onOpenChange(false);
-      onSuccess(); // Recargar datos después de actualizar
+      onSuccess();
     } catch (error) {
       console.error('Error al actualizar:', error);
     }
