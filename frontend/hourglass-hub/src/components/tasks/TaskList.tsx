@@ -1,139 +1,371 @@
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useState } from "react";
+import { format } from "date-fns";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { Clock, CheckCircle2, Circle, Calendar, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
-import type { Task } from "./TaskCalendar";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Plus, Search, Filter, Calendar as CalendarIcon, List as ListIcon, Loader2 } from "lucide-react";
+import { LogTimeModal } from "@/components/tasks/LogTimeModal";
+import { TaskCalendar, type Task } from "@/components/tasks/TaskCalendar";
+import { TaskList } from "@/components/tasks/TaskList";
+import { TaskEditModal } from "@/components/tasks/TaskEditModal";
+import { toast } from "sonner";
+import { useProjects } from "@/hooks/useProjects";
+import { useServices } from "@/hooks/useServices";
+import { useTasks, useCreateTask, useDeleteTask, useUpdateTask, type CreateTaskData as NewTask } from "@/hooks/useTasks";
+import { useAuth } from "@/hooks/useAuth";
+import { useHolidays } from "@/hooks/useHolidays";
 
-interface TaskListProps {
-  tasks: Task[];
-  onTaskClick?: (task: Task) => void;
-  onEditTask?: (task: Task) => void;
-  onDeleteTask?: (taskId: string) => void;
-}
+const Tasks = () => {
+  // Filtros y UI
+  const [searchQuery, setSearchQuery] = useState("");
+  const [logTimeModalOpen, setLogTimeModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"calendar" | "list">("list");
+  const [calendarView, setCalendarView] = useState<"week" | "month">("week");
+  const [projectFilter, setProjectFilter] = useState("all");
 
-const serviceTypeColors: Record<string, string> = {
-  development: "bg-blue-500/10 text-blue-600 border-blue-500/20",
-  support: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-  consulting: "bg-purple-500/10 text-purple-600 border-purple-500/20",
-  maintenance: "bg-slate-500/10 text-slate-600 border-slate-500/20",
-};
+  // Estado para eliminar
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
 
-export function TaskList({ tasks, onTaskClick, onEditTask, onDeleteTask }: TaskListProps) {
-  if (tasks.length === 0) {
-    return (
-      <div className="rounded-2xl border border-border bg-card p-12 text-center">
-        <Clock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-        <h3 className="text-lg font-semibold text-foreground mb-2">No tasks found</h3>
-        <p className="text-muted-foreground">Start logging time to see your tasks here.</p>
-      </div>
-    );
-  }
+  // Estado para editar
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [taskToEdit, setTaskToEdit] = useState<any>(null);
+
+  // --- Data Fetching con Hooks de Supabase ---
+  const { user } = useAuth();
+  const { data: projectsList, isLoading: isLoadingProjects } = useProjects();
+  const { data: servicesList } = useServices();
+  const { holidays } = useHolidays();
+  const { data: tasksData, isLoading: isLoadingTasks, refetch: refetchTasks } = useTasks(projectFilter);
+
+  // --- Mutaciones para CUD (Create, Update, Delete) ---
+  const createTaskMutation = useCreateTask();
+  const updateTaskMutation = useUpdateTask();
+  const deleteTaskMutation = useDeleteTask();
+
+  // Helper: Calcular horas entre dos timestamps ISO
+  const calculateDuration = (start: string, end: string) => {
+    if (!start || !end) return 0;
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const diffMs = endDate.getTime() - startDate.getTime();
+    const diffHours = diffMs / (1000 * 60 * 60);
+    return Math.round(diffHours * 10) / 10;
+  };
+
+  // 1. Crear Tarea
+  const handleCreateTask = async (data: any) => {
+    if (!user) return toast.error("Debes iniciar sesión para crear una tarea.");
+
+    const dateStr = format(data.date, "yyyy-MM-dd");
+    const start_time = new Date(`${dateStr}T${data.startTime}:00`).toISOString();
+    const end_time = new Date(`${dateStr}T${data.endTime}:00`).toISOString();
+
+    const selectedService = servicesList?.find(s => s.id === data.serviceId);
+
+    const isHoliday = holidays.data?.some(h => h.date === dateStr && !h.is_working_day);
+    let hourlyRate = selectedService?.default_hourly_rate || 0;
+
+    if (isHoliday) {
+      hourlyRate *= 2;
+      console.log("Aplicando tarifa festiva (x2)");
+    }
+
+    const payload: NewTask = {
+      project_id: data.projectId,
+      service_id: data.serviceId,
+      technician_id: user.id,
+      start_time,
+      end_time,
+      description: data.description,
+      status: data.completed ? 'Completed' : 'Pending',
+      priority: 'Medium',
+      applied_hourly_rate: hourlyRate,
+    };
+
+    createTaskMutation.mutate(payload, {
+      onSuccess: () => {
+        toast.success("Tarea registrada correctamente");
+        if (isHoliday) {
+          toast.info("Se aplicó tarifa festiva (x2) automáticamente.", { duration: 4000 });
+        }
+        setLogTimeModalOpen(false);
+        refetchTasks();
+      },
+      onError: (error: any) => {
+        console.error("Error detallado al crear tarea:", error);
+        toast.error(`Error al crear la tarea: ${error.message || 'Error desconocido'}`);
+        if (error.code === '403') {
+          toast.error("Permiso denegado (403). Verifica tu rol de usuario.");
+        }
+      },
+    });
+  };
+
+  // 2. Eliminar Tarea
+  const handleDeleteTask = (taskId: string) => {
+    console.log("=== handleDeleteTask ===");
+    console.log("ID recibido:", taskId);
+    console.log("Tipo:", typeof taskId);
+    setTaskToDelete(taskId);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteTask = async () => {
+    if (!taskToDelete) return;
+    console.log("=== confirmDeleteTask ===");
+    console.log("Eliminando ID:", taskToDelete);
+    
+    deleteTaskMutation.mutate(taskToDelete, {
+      onSuccess: () => {
+        toast.success("Tarea eliminada correctamente");
+        setDeleteDialogOpen(false);
+        setTaskToDelete(null);
+        refetchTasks();
+      },
+      onError: (error: any) => {
+        console.error("Error al eliminar:", error);
+        toast.error(`Error: ${error.message}`);
+      },
+    });
+  };
+
+  // 3. Editar Tarea
+  const handleEditTask = (task: Task) => {
+    console.log("=== handleEditTask ===");
+    console.log("Tarea a editar:", task);
+    const originalTask = tasksData?.find(t => String(t.id) === task.id);
+    if (originalTask) {
+      setTaskToEdit(originalTask);
+      setEditModalOpen(true);
+    } else {
+      toast.error("No se pudo encontrar la tarea para editar");
+    }
+  };
+
+  // 4. Actualizar Tarea después de editar
+  const handleUpdateTask = (updatedData: any) => {
+    if (!taskToEdit) return;
+    
+    updateTaskMutation.mutate({
+      id: taskToEdit.id,
+      data: updatedData
+    }, {
+      onSuccess: () => {
+        toast.success("Tarea actualizada correctamente");
+        setEditModalOpen(false);
+        setTaskToEdit(null);
+        refetchTasks();
+      },
+      onError: (error: any) => {
+        console.error("Error al actualizar tarea:", error);
+        toast.error(`Error al actualizar: ${error.message}`);
+      }
+    });
+  };
+
+  // Lógica de Filtrado
+  const tasks: Task[] = (tasksData || []).map(t => {
+    console.log("=== Mapeando tarea ===");
+    console.log("t completo:", t);
+    console.log("t.id:", t.id);
+    console.log("t.title:", t.title);
+    
+    return {
+      id: String(t.id),
+      title: t.description || t.title || "Tarea sin descripción",
+      date: t.start_time?.split('T')[0] || new Date().toISOString().split('T')[0],
+      startTime: t.start_time?.split('T')[1]?.substring(0, 5) || "00:00",
+      endTime: t.end_time?.split('T')[1]?.substring(0, 5) || "00:00",
+      project: t.projects?.name || "General",
+      serviceType: t.services?.name || "General",
+      completed: t.status === 'Completed',
+      hours: calculateDuration(t.start_time, t.end_time),
+    };
+  });
+
+  const filteredTasks = tasks.filter((task) => {
+    const matchesSearch =
+      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.serviceType.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.project?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
+  });
+
+  const totalHours = filteredTasks.reduce((acc, task) => acc + task.hours, 0);
+  const completedTasksCount = filteredTasks.filter(t => t.completed).length;
 
   return (
-    <div className="space-y-3">
-      {tasks.map((task, index) => (
-        <div
-          key={task.id}
-          onClick={() => onTaskClick?.(task)}
-          className={cn(
-            "group flex items-center gap-4 p-4 rounded-xl border border-border bg-card transition-all hover:shadow-card hover:-translate-y-0.5 cursor-pointer",
-            "opacity-0 animate-fade-in"
-          )}
-          style={{ animationDelay: `${index * 50}ms` }}
-        >
-          {/* Status Icon */}
-          <div className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-            task.completed ? "bg-success/10" : "bg-primary/10"
-          )}>
-            {task.completed ? (
-              <CheckCircle2 className="h-5 w-5 text-success" />
-            ) : (
-              <Circle className="h-5 w-5 text-primary" />
-            )}
-          </div>
-
-          {/* Task Info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-medium text-foreground truncate">
-                {task.title || `${task.serviceType} Task`}
-              </h3>
-              <Badge 
-                variant="outline" 
-                className={cn("text-xs capitalize", serviceTypeColors[task.serviceType] || serviceTypeColors.development)}
-              >
-                {task.serviceType}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5" />
-                {new Date(task.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-              </span>
-              <span className="flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" />
-                {task.startTime} - {task.endTime}
-              </span>
-              {task.project && (
-                <span className="truncate">{task.project}</span>
-              )}
-            </div>
-          </div>
-
-          {/* Hours */}
-          <div className="text-right shrink-0">
-            <p className="text-lg font-bold text-foreground">{task.hours}h</p>
-            <p className="text-xs text-muted-foreground">logged</p>
-          </div>
-
-          {/* Actions */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-card border-border">
-              <DropdownMenuItem
-                className="cursor-pointer gap-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEditTask?.(task);
-                }}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-  className="cursor-pointer gap-2 text-destructive focus:text-destructive"
-  onClick={(e) => {
-    e.stopPropagation();
-    console.log("=== DEBUG DELETE ===");
-    console.log("task completo:", task);
-    console.log("task.id:", task.id);
-    console.log("tipo de task.id:", typeof task.id);
-    onDeleteTask?.(String(task.id))
-  }}
->
-  <Trash2 className="h-3.5 w-3.5" />
-  Delete
-</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+    <DashboardLayout>
+      {/* Encabezado */}
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between opacity-0 animate-fade-in">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Tareas</h1>
+          <p className="mt-1 text-muted-foreground">
+            Registra y gestiona tus horas de trabajo
+          </p>
         </div>
-      ))}
-    </div>
+        <Button className="gap-2 shadow-glow" onClick={() => setLogTimeModalOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Registrar Tiempo
+        </Button>
+      </div>
+
+      {/* Tarjetas de Estadísticas */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 opacity-0 animate-fade-in" style={{ animationDelay: "100ms" }}>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-sm text-muted-foreground mb-1">Total Tareas</p>
+          <p className="text-2xl font-bold text-foreground">{filteredTasks.length}</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-sm text-muted-foreground mb-1">Horas Registradas</p>
+          <p className="text-2xl font-bold text-primary">{totalHours.toFixed(1)}h</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-sm text-muted-foreground mb-1">Completadas</p>
+          <p className="text-2xl font-bold text-green-500">{completedTasksCount}</p>
+        </div>
+      </div>
+
+      {/* Filtros y Selector de Vista */}
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between opacity-0 animate-fade-in" style={{ animationDelay: "150ms" }}>
+        <div className="flex flex-col sm:flex-row gap-4 flex-1">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar tareas..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 bg-muted/50 border-transparent focus:border-primary focus:bg-card"
+            />
+          </div>
+
+          <Select value={projectFilter} onValueChange={setProjectFilter}>
+            <SelectTrigger className="w-full sm:w-[200px] bg-muted/50 border-transparent">
+              <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+              <SelectValue placeholder="Filtrar por proyecto" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border">
+              <SelectItem value="all">Todos los Proyectos</SelectItem>
+              {projectsList?.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "calendar" | "list")}>
+            <TabsList className="bg-muted/50">
+              <TabsTrigger value="calendar" className="gap-2 data-[state=active]:bg-card">
+                <CalendarIcon className="h-4 w-4" />
+                Calendario
+              </TabsTrigger>
+              <TabsTrigger value="list" className="gap-2 data-[state=active]:bg-card">
+                <ListIcon className="h-4 w-4" />
+                Lista
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {viewMode === "calendar" && (
+            <Tabs value={calendarView} onValueChange={(v) => setCalendarView(v as "week" | "month")}>
+              <TabsList className="bg-muted/50">
+                <TabsTrigger value="week" className="data-[state=active]:bg-card">Semana</TabsTrigger>
+                <TabsTrigger value="month" className="data-[state=active]:bg-card">Mes</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+        </div>
+      </div>
+
+      {/* Contenido Principal */}
+      <div className="opacity-0 animate-fade-in" style={{ animationDelay: "200ms" }}>
+        {isLoadingTasks || isLoadingProjects ? (
+          <div className="flex justify-center items-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
+          <>
+            {viewMode === "calendar" ? (
+              <TaskCalendar
+                tasks={filteredTasks}
+                view={calendarView}
+                onTaskClick={(task) => handleEditTask(task)}
+              />
+            ) : (
+              <TaskList
+                tasks={filteredTasks}
+                onTaskClick={(task) => handleEditTask(task)}
+                onEditTask={(task) => handleEditTask(task)}
+                onDeleteTask={(taskId) => handleDeleteTask(taskId)}
+              />
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Diálogo de Confirmación de Borrado */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar Tarea</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que deseas eliminar esta tarea? Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteTask}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal para Editar Tarea */}
+      <TaskEditModal
+        task={taskToEdit}
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        onSuccess={() => {
+          refetchTasks();
+          toast.success("Tarea actualizada correctamente");
+        }}
+      />
+
+      {/* Modal para Registrar Tiempo */}
+      <LogTimeModal
+        open={logTimeModalOpen}
+        onOpenChange={setLogTimeModalOpen}
+        projects={projectsList || []}
+        onSubmit={handleCreateTask}
+      />
+    </DashboardLayout>
   );
-}
+};
+
+export default Tasks;
