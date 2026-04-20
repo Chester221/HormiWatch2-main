@@ -117,15 +117,16 @@ export function TaskList({ tasks, onTaskClick, onEditTask, onDeleteTask }: TaskL
                 Edit
               </DropdownMenuItem>
               <DropdownMenuItem
-                className="cursor-pointer gap-2 text-destructive focus:text-destructive"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteTask?.(String(task.id))
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete
-              </DropdownMenuItem>
+  className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+  onClick={(e) => {
+    e.stopPropagation();
+    console.log("ID desde TaskList:", task.id, "tipo:", typeof task.id);
+    onDeleteTask?.(String(task.id))
+  }}
+>
+  <Trash2 className="h-3.5 w-3.5" />
+  Delete
+</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

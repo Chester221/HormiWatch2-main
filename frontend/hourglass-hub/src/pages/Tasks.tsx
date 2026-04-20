@@ -122,24 +122,24 @@ const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
 
   // 2. Eliminar Tarea
 const handleDeleteTask = (taskId: string) => {
-  console.log("Eliminando tarea:", taskId);
+  console.log("ID recibido en Tasks.tsx:", taskId, "tipo:", typeof taskId);
   setTaskToDelete(taskId);
   setDeleteDialogOpen(true);
 };
 
   const confirmDeleteTask = async () => {
   if (!taskToDelete) return;
+  console.log("Confirmando eliminación de:", taskToDelete);
+  
   deleteTaskMutation.mutate(taskToDelete, {
-    onSuccess: async () => {
+    onSuccess: () => {
       toast.success("Tarea eliminada correctamente");
       setDeleteDialogOpen(false);
       setTaskToDelete(null);
-      await refetchTasks();
-      setTimeout(() => {
-        refetchTasks();
-      }, 500);
+      refetchTasks();
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      console.error("Error al eliminar:", error);
       toast.error(`Error: ${error.message}`);
     },
   });
