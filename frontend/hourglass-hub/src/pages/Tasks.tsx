@@ -43,7 +43,7 @@ const Tasks = () => {
 
   // Estado para eliminar
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
 
   // Estado para editar
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -121,32 +121,37 @@ const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   };
 
   // 2. Eliminar Tarea
-const handleDeleteTask = (taskId: string) => {
-  console.log("ID recibido en Tasks.tsx:", taskId, "tipo:", typeof taskId);
-  setTaskToDelete(taskId);
-  setDeleteDialogOpen(true);
-};
+  const handleDeleteTask = (taskId: string) => {
+    console.log("=== handleDeleteTask ===");
+    console.log("ID recibido:", taskId);
+    console.log("Tipo:", typeof taskId);
+    setTaskToDelete(taskId);
+    setDeleteDialogOpen(true);
+  };
 
   const confirmDeleteTask = async () => {
-  if (!taskToDelete) return;
-  console.log("Confirmando eliminación de:", taskToDelete);
-  
-  deleteTaskMutation.mutate(taskToDelete, {
-    onSuccess: () => {
-      toast.success("Tarea eliminada correctamente");
-      setDeleteDialogOpen(false);
-      setTaskToDelete(null);
-      refetchTasks();
-    },
-    onError: (error: any) => {
-      console.error("Error al eliminar:", error);
-      toast.error(`Error: ${error.message}`);
-    },
-  });
-};
+    if (!taskToDelete) return;
+    console.log("=== confirmDeleteTask ===");
+    console.log("Eliminando ID:", taskToDelete);
+    
+    deleteTaskMutation.mutate(taskToDelete, {
+      onSuccess: () => {
+        toast.success("Tarea eliminada correctamente");
+        setDeleteDialogOpen(false);
+        setTaskToDelete(null);
+        refetchTasks();
+      },
+      onError: (error: any) => {
+        console.error("Error al eliminar:", error);
+        toast.error(`Error: ${error.message}`);
+      },
+    });
+  };
 
   // 3. Editar Tarea
   const handleEditTask = (task: Task) => {
+    console.log("=== handleEditTask ===");
+    console.log("Tarea a editar:", task);
     const originalTask = tasksData?.find(t => String(t.id) === task.id);
     if (originalTask) {
       setTaskToEdit(originalTask);
@@ -178,17 +183,24 @@ const handleDeleteTask = (taskId: string) => {
   };
 
   // Lógica de Filtrado
-  const tasks: Task[] = (tasksData || []).map(t => ({
-    id: String(t.id),
-    title: t.description || t.title || "Tarea sin descripción",
-    date: t.start_time?.split('T')[0] || new Date().toISOString().split('T')[0],
-    startTime: t.start_time?.split('T')[1]?.substring(0, 5) || "00:00",
-    endTime: t.end_time?.split('T')[1]?.substring(0, 5) || "00:00",
-    project: t.projects?.name || "General",
-    serviceType: t.services?.name || "General",
-    completed: t.status === 'Completed',
-    hours: calculateDuration(t.start_time, t.end_time),
-  }));
+  const tasks: Task[] = (tasksData || []).map(t => {
+    console.log("=== Mapeando tarea ===");
+    console.log("t completo:", t);
+    console.log("t.id:", t.id);
+    console.log("t.title:", t.title);
+    
+    return {
+      id: String(t.id),
+      title: t.description || t.title || "Tarea sin descripción",
+      date: t.start_time?.split('T')[0] || new Date().toISOString().split('T')[0],
+      startTime: t.start_time?.split('T')[1]?.substring(0, 5) || "00:00",
+      endTime: t.end_time?.split('T')[1]?.substring(0, 5) || "00:00",
+      project: t.projects?.name || "General",
+      serviceType: t.services?.name || "General",
+      completed: t.status === 'Completed',
+      hours: calculateDuration(t.start_time, t.end_time),
+    };
+  });
 
   const filteredTasks = tasks.filter((task) => {
     const matchesSearch =
@@ -306,7 +318,7 @@ const handleDeleteTask = (taskId: string) => {
                 tasks={filteredTasks}
                 onTaskClick={(task) => handleEditTask(task)}
                 onEditTask={(task) => handleEditTask(task)}
-                onDeleteTask={(taskId) => handleDeleteTask(Number(taskId))}
+                onDeleteTask={(taskId) => handleDeleteTask(taskId)}
               />
             )}
           </>
@@ -336,17 +348,14 @@ const handleDeleteTask = (taskId: string) => {
 
       {/* Modal para Editar Tarea */}
       <TaskEditModal
-  task={taskToEdit}
-  open={editModalOpen}
-  onOpenChange={setEditModalOpen}
-  onSuccess={async () => {
-    await refetchTasks();
-    setTimeout(() => {
-      refetchTasks();
-    }, 500);
-    toast.success("Tarea actualizada correctamente");
-  }}
-/>
+        task={taskToEdit}
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        onSuccess={() => {
+          refetchTasks();
+          toast.success("Tarea actualizada correctamente");
+        }}
+      />
 
       {/* Modal para Registrar Tiempo */}
       <LogTimeModal
