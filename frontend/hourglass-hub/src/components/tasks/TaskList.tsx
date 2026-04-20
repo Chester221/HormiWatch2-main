@@ -120,7 +120,10 @@ export function TaskList({ tasks, onTaskClick, onEditTask, onDeleteTask }: TaskL
   className="cursor-pointer gap-2 text-destructive focus:text-destructive"
   onClick={(e) => {
     e.stopPropagation();
-    console.log("ID desde TaskList:", task.id, "tipo:", typeof task.id);
+    console.log("=== DEBUG DELETE ===");
+    console.log("task completo:", task);
+    console.log("task.id:", task.id);
+    console.log("tipo de task.id:", typeof task.id);
     onDeleteTask?.(String(task.id))
   }}
 >
